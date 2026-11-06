@@ -43,7 +43,7 @@ Files live under /storage/emulated/0/ . Files the user attaches are saved in /st
         body.put("system_instruction",
             JSONObject().put("parts", JSONArray().put(JSONObject().put("text", SYSTEM))))
         body.put("contents", JSONArray(turns))
-        body.put("generationConfig", JSONObject().put("responseMimeType", "application/json"))
+        body.put("generationConfig", JSONObject().put("responseMimeType", "application/json").put("maxOutputTokens", 4096))
 
         var lastErr = ""
         for (attempt in 1..6) {
@@ -59,11 +59,15 @@ Files live under /storage/emulated/0/ . Files the user attaches are saved in /st
             val code = c.responseCode
             val txt = (if (code in 200..299) c.inputStream else c.errorStream).bufferedReader().readText()
             if (code in 200..299) {
-                val parts = JSONObject(txt).getJSONArray("candidates").getJSONObject(0)
-                    .getJSONObject("content").getJSONArray("parts")
+                val j = JSONObject(txt)
+                val cand = j.optJSONArray("candidates")?.optJSONObject(0)
+                val parts = cand?.optJSONObject("content")?.optJSONArray("parts")
                 val sb = StringBuilder()
-                for (i in 0 until parts.length()) sb.append(parts.getJSONObject(i).optString("text"))
-                return sb.toString()
+                if (parts != null) for (i in 0 until parts.length()) sb.append(parts.getJSONObject(i).optString("text"))
+                if (sb.isNotBlank()) return sb.toString()
+                lastErr = "رد فارغ من Gemini: " + (cand?.optString("finishReason") ?: "") + " " + (j.optJSONObject("promptFeedback")?.toString() ?: "")
+                Thread.sleep(2000)
+                continue
             }
             lastErr = "HTTP " + code + ": " + txt.take(300)
             if (code != 429 && code != 503) break
