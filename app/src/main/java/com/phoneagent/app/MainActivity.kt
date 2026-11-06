@@ -240,7 +240,7 @@ class MainActivity : Activity() {
         row.addView(input, LinearLayout.LayoutParams(0, -2, 1f))
         val micBtn = icon("🎤") {
             if (VoiceService.live) VoiceService.instance?.stopLive()
-            else startActivity(Intent(this, VoiceActivity::class.java))
+            else startActivity(Intent(this, LiveActivity::class.java))
         }
         row.addView(micBtn)
         row.addView(icon("➤") {
@@ -256,7 +256,7 @@ class MainActivity : Activity() {
         setContentView(root)
 
         if (Agent.msgs.isEmpty()) {
-            Agent.msgs.add(Msg(1, "هلا! اكتب أو اضغط 🎤 وكلمني. أقدر أسوي ملفات وكودات وأتحكم بالجوال. والدائرة الزرقاء 🎤 تطلع فوق كل التطبيقات."))
+            Agent.msgs.add(Msg(1, "هلا! اكتب أو اضغط 🎤 وكلمني. أقدر أسوي ملفات وكودات وأتحكم بالجوال. واضغط 🎤 للمحادثة الصوتية مثل Gemini Live."))
         }
         if ((sp.getString("key", "") ?: "").isBlank()) showSettings()
 

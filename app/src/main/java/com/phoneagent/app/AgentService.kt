@@ -37,7 +37,6 @@ class AgentService : AccessibilityService() {
     override fun onServiceConnected() {
         instance = this
         Voice.init(this)
-        showBubble()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
