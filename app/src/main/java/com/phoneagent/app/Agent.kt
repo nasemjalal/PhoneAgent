@@ -135,6 +135,11 @@ object Agent {
     private fun exec(svc: AgentService, a: JSONObject): String {
         val (w, h) = svc.screenSize()
         fun px(k: String, dim: Int) = (a.optDouble(k, 500.0) / 1000.0 * dim).toFloat()
+        val act0 = a.optString("action")
+        if ((act0 == "tap" || act0 == "long_press" || act0 == "swipe") && (!a.has("x") || !a.has("y")))
+            return "ERROR: missing x or y, send the action again with both"
+        if (act0 == "swipe" && (!a.has("x2") || !a.has("y2")))
+            return "ERROR: missing x2 or y2, send the action again with both"
         return try {
             when (val t = a.optString("action")) {
                 "tap" -> if (svc.gesture(px("x", w), px("y", h), px("x", w), px("y", h), 60)) "ok" else "gesture failed"

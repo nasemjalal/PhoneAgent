@@ -38,12 +38,34 @@ Files live under /storage/emulated/0/ . Files the user attaches are saved in /st
         return JSONObject().put("role", role).put("parts", parts)
     }
 
+    private fun schema(): JSONObject {
+        val p = JSONObject()
+        for (k in listOf("thought", "text", "pkg", "name", "path", "content", "old", "new", "msg"))
+            p.put(k, JSONObject().put("type", "STRING"))
+        for (k in listOf("x", "y", "x2", "y2"))
+            p.put(k, JSONObject().put("type", "NUMBER"))
+        p.put("ms", JSONObject().put("type", "INTEGER"))
+        val acts = JSONArray()
+        for (a in listOf("tap", "long_press", "swipe", "type", "back", "home", "recents", "find_app",
+            "open_app", "wait", "list_dir", "read_file", "write_file", "edit_file", "done")) acts.put(a)
+        p.put("action", JSONObject().put("type", "STRING").put("enum", acts))
+        return JSONObject()
+            .put("type", "OBJECT")
+            .put("properties", p)
+            .put("propertyOrdering", JSONArray(listOf("thought", "action", "x", "y", "x2", "y2", "ms",
+                "text", "pkg", "name", "path", "content", "old", "new", "msg")))
+            .put("required", JSONArray().put("action"))
+    }
+
     fun call(key: String, model: String, turns: List<JSONObject>): String {
         val body = JSONObject()
         body.put("system_instruction",
             JSONObject().put("parts", JSONArray().put(JSONObject().put("text", SYSTEM))))
         body.put("contents", JSONArray(turns))
-        body.put("generationConfig", JSONObject().put("responseMimeType", "application/json").put("maxOutputTokens", 4096))
+        body.put("generationConfig", JSONObject()
+            .put("responseMimeType", "application/json")
+            .put("responseSchema", schema())
+            .put("maxOutputTokens", 4096))
 
         var lastErr = ""
         for (attempt in 1..6) {

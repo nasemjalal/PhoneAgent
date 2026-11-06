@@ -238,7 +238,11 @@ class MainActivity : Activity() {
             startActivityForResult(i, 21)
         })
         row.addView(input, LinearLayout.LayoutParams(0, -2, 1f))
-        row.addView(icon("🎤") { startActivity(Intent(this, VoiceActivity::class.java)) })
+        val micBtn = icon("🎤") {
+            if (VoiceService.live) VoiceService.instance?.stopLive()
+            else startActivity(Intent(this, VoiceActivity::class.java))
+        }
+        row.addView(micBtn)
         row.addView(icon("➤") {
             val t = input.text.toString().trim()
             if (t.isNotEmpty() || atts.isNotEmpty()) {
@@ -259,7 +263,9 @@ class MainActivity : Activity() {
         val tick = object : Runnable {
             override fun run() {
                 status.text = if (AgentService.instance != null) "الخدمة مفعّلة ✅" else "الخدمة غير مفعّلة ❌ (من ⚙️)"
-                busy.text = if (Agent.running) "⏳ يشتغل... (خفض الصوت للإيقاف)" else ""
+                busy.text = if (Agent.running) "⏳ يشتغل... (خفض الصوت للإيقاف)"
+                    else if (VoiceService.live) "🔴 أسمعك... تكلم (اضغط 🔴 للإيقاف)" else ""
+                micBtn.text = if (VoiceService.live) "🔴" else "🎤"
                 val snap = Agent.msgs.toList()
                 if (snap.size < rendered) { list.removeAllViews(); rendered = 0 }
                 if (snap.size > rendered) {

@@ -117,6 +117,10 @@ class AgentService : AccessibilityService() {
         if (Agent.running) {
             Agent.stop()
         } else {
+            if (VoiceService.live) {
+                VoiceService.instance?.stopLive()
+                return
+            }
             val i = Intent(this, VoiceActivity::class.java)
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             startActivity(i)
@@ -124,7 +128,7 @@ class AgentService : AccessibilityService() {
     }
 
     fun refreshBubble() {
-        bubble?.post { bubble?.text = if (Agent.running) "⏹" else "🎤" }
+        bubble?.post { bubble?.text = if (Agent.running) "⏹" else if (VoiceService.live) "🔴" else "🎤" }
     }
 
     // ---------- screen control ----------
