@@ -5,9 +5,12 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 
+class Att(val name: String, val mime: String, val b64: String?, val text: String?, val path: String?)
+
 object Gemini {
 
-    const val SYSTEM = """You are an agent that controls an Android phone. The user writes Arabic; write "thought" and "msg" in Arabic.
+    const val SYSTEM = """You are a friendly personal assistant living inside the user's Android phone. Talk like a natural Arabic speaker (Iraqi dialect is fine). Your "msg" may be read aloud, so keep it short, plain text, no markdown, no emojis.
+If the user is only chatting or asking a question, answer immediately with the done action. If the task needs the phone, act step by step.
 Each turn you get the current screen (screenshot + list of UI elements) and must reply with ONE JSON object only.
 Coordinates x,y are 0-1000 (0,0 = top-left, 1000,1000 = bottom-right). UI lines look like [x,y] text.
 Actions:
@@ -21,15 +24,17 @@ Actions:
 {"action":"wait","ms":1500}
 {"action":"list_dir","path":".."} {"action":"read_file","path":".."}
 {"action":"write_file","path":"..","content":".."} {"action":"edit_file","path":"..","old":"..","new":".."}
-{"action":"done","msg":".."}   when finished or impossible
-Files live under /storage/emulated/0/ . For code tasks (Minecraft mods, KubeJS, plugins, scripts) write files directly instead of typing inside games. Look at a file before editing it. Never delete or overwrite things the user did not ask about. Never enter passwords, payment or banking details."""
+{"action":"done","msg":".."}   final answer to the user in Arabic; use it also when finished or impossible
+The small round floating button on screen is your own interface: ignore it and never tap it.
+Files live under /storage/emulated/0/ . Files the user attaches are saved in /storage/emulated/0/Download/PhoneAgent/ and described in the message. For code tasks (Minecraft mods, KubeJS, plugins, scripts) write files directly instead of typing inside games. Look at a file before editing it. Never delete or overwrite things the user did not ask about. Never enter passwords, payment or banking details."""
 
-    fun turn(role: String, text: String, img: String? = null): JSONObject {
+    private fun inline(m: String, d: String): JSONObject =
+        JSONObject().put("inline_data", JSONObject().put("mime_type", m).put("data", d))
+
+    fun turn(role: String, text: String, img: String? = null, atts: List<Att> = emptyList()): JSONObject {
         val parts = JSONArray().put(JSONObject().put("text", text))
-        if (img != null) {
-            parts.put(JSONObject().put("inline_data",
-                JSONObject().put("mime_type", "image/jpeg").put("data", img)))
-        }
+        if (img != null) parts.put(inline("image/jpeg", img))
+        for (a in atts) if (a.b64 != null) parts.put(inline(a.mime, a.b64))
         return JSONObject().put("role", role).put("parts", parts)
     }
 

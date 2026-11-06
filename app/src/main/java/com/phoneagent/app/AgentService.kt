@@ -5,19 +5,26 @@ import android.accessibilityservice.GestureDescription
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Path
+import android.graphics.PixelFormat
 import android.graphics.Rect
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
 import android.util.Base64
 import android.util.DisplayMetrics
 import android.view.Display
+import android.view.Gravity
 import android.view.KeyEvent
+import android.view.MotionEvent
+import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.widget.TextView
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import kotlin.math.abs
 
 class AgentService : AccessibilityService() {
 
@@ -25,12 +32,24 @@ class AgentService : AccessibilityService() {
         @Volatile var instance: AgentService? = null
     }
 
-    override fun onServiceConnected() { instance = this }
+    private var bubble: TextView? = null
+
+    override fun onServiceConnected() {
+        instance = this
+        Voice.init(this)
+        showBubble()
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
     override fun onInterrupt() {}
 
     override fun onUnbind(intent: Intent?): Boolean {
         instance = null
+        try {
+            bubble?.let { (getSystemService(WINDOW_SERVICE) as WindowManager).removeView(it) }
+        } catch (e: Exception) {
+        }
+        bubble = null
         return super.onUnbind(intent)
     }
 
@@ -43,6 +62,72 @@ class AgentService : AccessibilityService() {
         return false
     }
 
+    // ---------- floating mic button (works over any app) ----------
+    private fun showBubble() {
+        val wm = getSystemService(WINDOW_SERVICE) as WindowManager
+        val v = TextView(this)
+        v.text = "🎤"
+        v.textSize = 24f
+        v.gravity = Gravity.CENTER
+        val bg = GradientDrawable()
+        bg.shape = GradientDrawable.OVAL
+        bg.setColor(0xCC2F6FED.toInt())
+        v.background = bg
+        val size = (56 * resources.displayMetrics.density).toInt()
+        val lp = WindowManager.LayoutParams(
+            size, size,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT
+        )
+        lp.gravity = Gravity.TOP or Gravity.START
+        lp.x = 16
+        lp.y = 500
+        v.setOnTouchListener(object : View.OnTouchListener {
+            var sx = 0f
+            var sy = 0f
+            var ox = 0
+            var oy = 0
+            var moved = false
+            override fun onTouch(view: View, e: MotionEvent): Boolean {
+                when (e.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        sx = e.rawX; sy = e.rawY; ox = lp.x; oy = lp.y; moved = false
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        val dx = (e.rawX - sx).toInt()
+                        val dy = (e.rawY - sy).toInt()
+                        if (abs(dx) > 12 || abs(dy) > 12) moved = true
+                        if (moved) {
+                            lp.x = ox + dx
+                            lp.y = oy + dy
+                            wm.updateViewLayout(view, lp)
+                        }
+                    }
+                    MotionEvent.ACTION_UP -> if (!moved) onBubbleTap()
+                }
+                return true
+            }
+        })
+        wm.addView(v, lp)
+        bubble = v
+    }
+
+    private fun onBubbleTap() {
+        if (Agent.running) {
+            Agent.stop()
+        } else {
+            val i = Intent(this, VoiceActivity::class.java)
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(i)
+        }
+    }
+
+    fun refreshBubble() {
+        bubble?.post { bubble?.text = if (Agent.running) "⏹" else "🎤" }
+    }
+
+    // ---------- screen control ----------
     fun screenSize(): Pair<Int, Int> {
         val wm = getSystemService(WINDOW_SERVICE) as WindowManager
         return if (Build.VERSION.SDK_INT >= 30) {
