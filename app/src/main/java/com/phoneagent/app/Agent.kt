@@ -101,9 +101,11 @@ object Agent {
         for (step in 1..30) {
             if (!running) return
             val (w, h) = svc.screenSize()
-            val obs = "Step " + step + ". Screen " + w + "x" + h + ".\n" + svc.dumpScreen()
+            val first = step == 1
+            val obs = if (first) "Step 1. Screen " + w + "x" + h + ". (No screenshot yet. If your task needs the screen, reply with the action look. Otherwise just answer.)"
+                else "Step " + step + ". Screen " + w + "x" + h + ".\n" + svc.dumpScreen()
             val turns = ArrayList(history)
-            turns.add(Gemini.turn("user", obs, svc.screenshotB64()))
+            turns.add(Gemini.turn("user", obs, if (first) null else svc.screenshotB64()))
             val raw = Gemini.call(key, model, turns)
             if (!running) return
             history.add(Gemini.turn("user", obs))
@@ -150,6 +152,7 @@ object Agent {
                 "home" -> { svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME); "ok" }
                 "recents" -> { svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_RECENTS); "ok" }
                 "wait" -> { Thread.sleep(a.optLong("ms", 1500)); "ok" }
+                "look" -> "ok"
                 "find_app" -> {
                     val q = a.optString("name").lowercase()
                     val pm = svc.packageManager
