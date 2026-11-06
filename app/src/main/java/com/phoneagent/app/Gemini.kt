@@ -41,7 +41,7 @@ Files live under /storage/emulated/0/ . For code tasks (Minecraft mods, KubeJS, 
         body.put("generationConfig", JSONObject().put("responseMimeType", "application/json"))
 
         var lastErr = ""
-        for (attempt in 1..3) {
+        for (attempt in 1..6) {
             val c = URL("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent")
                 .openConnection() as HttpURLConnection
             c.requestMethod = "POST"
@@ -62,7 +62,7 @@ Files live under /storage/emulated/0/ . For code tasks (Minecraft mods, KubeJS, 
             }
             lastErr = "HTTP " + code + ": " + txt.take(300)
             if (code != 429 && code != 503) break
-            Thread.sleep(3000)
+            Thread.sleep(5000)
         }
         throw Exception(lastErr)
     }
