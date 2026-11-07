@@ -1,14 +1,11 @@
 package com.phoneagent.app
 
-import android.accessibilityservice.AccessibilityService
 import android.content.Context
-import android.content.Intent
 import android.os.Handler
 import android.os.Looper
 import android.widget.Toast
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.File
 import java.util.concurrent.CopyOnWriteArrayList
 
 // type: 0 = user, 1 = assistant reply, 2 = small step line
@@ -32,9 +29,7 @@ object Agent {
                 Toast.makeText(svc, txt, Toast.LENGTH_LONG).show()
             }
         }
-        if (speak || Voice.always) {
-            if (!Voice.speak(txt)) say("⚠️ الصوت العربي غير متوفر بالجهاز")
-        }
+        if (speak || Voice.always) Voice.speak(txt)
     }
 
     fun stop() {
@@ -97,110 +92,56 @@ object Agent {
     }
 
     private fun loop(svc: AgentService, key: String, model: String, voice: Boolean) {
-        if (voice) Thread.sleep(900)
+        if (voice) Thread.sleep(200)
         for (step in 1..30) {
             if (!running) return
             val (w, h) = svc.screenSize()
             val first = step == 1
-            val obs = if (first) "Step 1. Screen " + w + "x" + h + ". (No screenshot yet. If your task needs the screen, reply with the action look. Otherwise just answer.)"
-                else "Step " + step + ". Screen " + w + "x" + h + ".\n" + svc.dumpScreen()
+            val obs = if (first)
+                "Step 1. Screen " + w + "x" + h + ". (No screenshot yet. If your task needs the screen, reply with the action look. Otherwise just answer.)"
+            else
+                "Step " + step + ". Screen " + w + "x" + h + ".\n" + svc.dumpScreen()
             val turns = ArrayList(history)
             turns.add(Gemini.turn("user", obs, if (first) null else svc.screenshotB64()))
             val raw = Gemini.call(key, model, turns)
             if (!running) return
-            history.add(Gemini.turn("user", obs))
+            history.add(Gemini.turn("user", obs.take(200)))
             history.add(Gemini.turn("model", raw))
             val a = try { parse(raw) } catch (e: Exception) {
                 say("⚠️ رد غير مفهوم، أعيد المحاولة")
                 history.add(Gemini.turn("user", "Invalid JSON. Reply with ONE JSON object only."))
                 continue
             }
-            if (a.optString("action") == "done") { reply(a.optString("msg"), voice); return }
             val th = a.optString("thought")
             if (th.isNotBlank()) say("💭 " + th)
-            say("▶ " + a.toString().take(160))
-            val res = exec(svc, a)
-            say("   → " + res.take(150))
-            history.add(Gemini.turn("user", "Result: " + res))
-            while (history.size > 60) history.removeAt(1)
-            Thread.sleep(700)
+
+            var list = a.optJSONArray("actions")
+            if (list == null) {
+                list = JSONArray()
+                if (a.has("action")) list.put(a)
+            }
+            val results = StringBuilder()
+            var n = 0
+            for (i in 0 until minOf(list.length(), 6)) {
+                if (!running) return
+                val act = list.getJSONObject(i)
+                val kind = act.optString("action")
+                if (kind == "done") { reply(act.optString("msg"), voice); return }
+                say("▶ " + act.toString().take(120))
+                val res = Tools.exec(svc, act)
+                n++
+                results.append(n).append(") ").append(res.take(300)).append("\n")
+                say("   → " + res.take(100))
+                // a failed action cancels the rest of the batch
+                if (res.startsWith("ERROR") || res.startsWith("missing") || res.contains("failed") ||
+                    res.contains("not found") || res.contains("no focused")) break
+                if (kind in setOf("tap", "long_press", "swipe", "type", "back", "home", "recents")) Thread.sleep(250)
+            }
+            if (n == 0) results.append("no actions were sent")
+            history.add(Gemini.turn("user", "Results:\n" + results))
+            while (history.size > 30) history.removeAt(1)
+            Thread.sleep(300)
         }
         say("⏹ وصلت الحد الأقصى (30 خطوة)")
-    }
-
-    private fun path(a: JSONObject): String {
-        var p = a.optString("path")
-        if (!p.startsWith("/")) p = "/storage/emulated/0/" + p.removePrefix("~/")
-        return p
-    }
-
-    private fun exec(svc: AgentService, a: JSONObject): String {
-        val (w, h) = svc.screenSize()
-        fun px(k: String, dim: Int) = (a.optDouble(k, 500.0) / 1000.0 * dim).toFloat()
-        val act0 = a.optString("action")
-        if ((act0 == "tap" || act0 == "long_press" || act0 == "swipe") && (!a.has("x") || !a.has("y")))
-            return "ERROR: missing x or y, send the action again with both"
-        if (act0 == "swipe" && (!a.has("x2") || !a.has("y2")))
-            return "ERROR: missing x2 or y2, send the action again with both"
-        return try {
-            when (val t = a.optString("action")) {
-                "tap" -> if (svc.gesture(px("x", w), px("y", h), px("x", w), px("y", h), 60)) "ok" else "gesture failed"
-                "long_press" -> if (svc.gesture(px("x", w), px("y", h), px("x", w), px("y", h), 900)) "ok" else "gesture failed"
-                "swipe" -> if (svc.gesture(px("x", w), px("y", h), px("x2", w), px("y2", h), a.optLong("ms", 400))) "ok" else "gesture failed"
-                "type" -> if (svc.typeText(a.optString("text"))) "ok" else "no focused input field"
-                "back" -> { svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK); "ok" }
-                "home" -> { svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME); "ok" }
-                "recents" -> { svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_RECENTS); "ok" }
-                "wait" -> { Thread.sleep(a.optLong("ms", 1500)); "ok" }
-                "look" -> "ok"
-                "find_app" -> {
-                    val q = a.optString("name").lowercase()
-                    val pm = svc.packageManager
-                    val r = pm.getInstalledApplications(0)
-                        .filter { pm.getLaunchIntentForPackage(it.packageName) != null }
-                        .filter { pm.getApplicationLabel(it).toString().lowercase().contains(q) || it.packageName.contains(q) }
-                        .take(10)
-                        .joinToString("\n") { pm.getApplicationLabel(it).toString() + " = " + it.packageName }
-                    if (r.isBlank()) "none found" else r
-                }
-                "open_app" -> {
-                    val i = svc.packageManager.getLaunchIntentForPackage(a.optString("pkg"))
-                    if (i == null) "app not found" else {
-                        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        svc.startActivity(i)
-                        Thread.sleep(2500)
-                        "opened"
-                    }
-                }
-                "list_dir" -> {
-                    val l = File(path(a)).listFiles()
-                    if (l == null) "cannot list (no permission or not a folder)" else
-                        l.sortedBy { it.name }.joinToString("\n") {
-                            (if (it.isDirectory) "[dir] " else "") + it.name + (if (it.isFile) " " + it.length() + "B" else "")
-                        }.take(4000)
-                }
-                "read_file" -> File(path(a)).readText().take(8000)
-                "write_file" -> {
-                    val f = File(path(a))
-                    f.parentFile?.mkdirs()
-                    if (f.exists()) f.copyTo(File(f.path + ".bak"), true)
-                    f.writeText(a.optString("content"))
-                    "written " + f.path
-                }
-                "edit_file" -> {
-                    val f = File(path(a))
-                    val s = f.readText()
-                    val old = a.optString("old")
-                    if (!s.contains(old)) "old text not found" else {
-                        f.copyTo(File(f.path + ".bak"), true)
-                        f.writeText(s.replaceFirst(old, a.optString("new")))
-                        "edited " + f.path
-                    }
-                }
-                else -> "unknown action " + t
-            }
-        } catch (e: Exception) {
-            "ERROR: " + e.message
-        }
     }
 }

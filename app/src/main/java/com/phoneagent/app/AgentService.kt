@@ -181,7 +181,7 @@ class AgentService : AccessibilityService() {
         val sb = StringBuilder()
         sb.append("App: ").append(root.packageName).append("\n")
         fun walk(n: AccessibilityNodeInfo?) {
-            if (n == null || sb.length > 4000) return
+            if (n == null || sb.length > 2500) return
             val t = (n.text ?: n.contentDescription)?.toString()
             if (!t.isNullOrBlank() || n.isClickable || n.isEditable) {
                 val r = Rect()
@@ -210,11 +210,11 @@ class AgentService : AccessibilityService() {
                     val bmp = hw?.copy(Bitmap.Config.ARGB_8888, false)
                     screenshot.hardwareBuffer.close()
                     if (bmp != null) {
-                        val w = 640
+                        val w = 512
                         val h = bmp.height * w / bmp.width
                         val sm = Bitmap.createScaledBitmap(bmp, w, h, true)
                         val bo = ByteArrayOutputStream()
-                        sm.compress(Bitmap.CompressFormat.JPEG, 60, bo)
+                        sm.compress(Bitmap.CompressFormat.JPEG, 50, bo)
                         result = Base64.encodeToString(bo.toByteArray(), Base64.NO_WRAP)
                     }
                 } catch (e: Exception) {
